@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="fr"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Caisse Terrasse</title>
+<link rel="manifest" href="manifest.json"><meta name="theme-color" content="#1f4e5f"><link rel="icon" href="icon-192.png"><link rel="apple-touch-icon" href="icon-192.png">
+<style>
+:root{--bg:#f6f8f9;--c:#fff;--t:#1d2b30;--p:#1f4e5f;--g:#e8f1f4;--b:#d5dde0;--ok:#c6e0b4;--w:#ffe699;--r:#f8cbad}
+@media(prefers-color-scheme:dark){:root{--bg:#12191c;--c:#1b2529;--t:#e6eef0;--p:#6fb3c6;--g:#243238;--b:#33444a;--ok:#2f5a2a;--w:#6b5a1a;--r:#6b2f1a}}
+*{box-sizing:border-box}body{margin:0;font:15px Arial,sans-serif;background:var(--bg);color:var(--t);padding-bottom:64px}
+header{background:var(--p);color:#fff;padding:10px 12px;position:sticky;top:0;z-index:5;display:flex;gap:8px;align-items:center}
+header h1{font-size:16px;margin:0;flex:1}header input{padding:6px;border-radius:6px;border:0}
+main{padding:10px;max-width:760px;margin:auto}
+.card{background:var(--c);border:1px solid var(--b);border-radius:10px;padding:10px;margin-bottom:10px}
+label{display:block;font-size:12px;opacity:.75;margin-top:6px}
+input,select,button{font:inherit;padding:9px;border-radius:8px;border:1px solid var(--b);background:var(--c);color:var(--t);width:100%}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+button.p{background:var(--p);color:#fff;border:0;margin-top:10px;font-weight:bold}
+table{width:100%;border-collapse:collapse;font-size:13px}td,th{padding:5px 4px;border-bottom:1px solid var(--b);text-align:right}
+td:first-child,th:first-child{text-align:left}th{background:var(--g)}
+tr.k td{font-weight:bold;background:var(--g)}tr.w td{background:var(--g);font-weight:bold}tr.m td{background:var(--p);color:#fff;font-weight:bold}
+.s{padding:2px 8px;border-radius:10px;font-size:12px}.OK{background:var(--ok)}.AJ{background:var(--w)}.AL{background:var(--r)}
+nav{position:fixed;bottom:0;left:0;right:0;display:flex;background:var(--c);border-top:1px solid var(--b)}
+nav button{border:0;border-radius:0;padding:14px 4px;background:none;font-weight:bold}nav button.on{color:var(--p);border-top:3px solid var(--p)}
+.x{width:auto;padding:2px 8px;color:#c00;border:0;background:none}small{opacity:.7}
+</style></head><body>
+<header><h1>Caisse Terrasse</h1><span id="st" style="font-size:11px"></span><input type="date" id="d"></header>
+<main id="v"></main>
+<nav id="n"></nav>
+<script>
+const $=s=>document.querySelector(s);
+const TYPES=["Vente","Remboursement","Annulation / remise","Sortie de caisse","Apport en caisse","Versement coffre / banque"],MODES=["Espèces","Mobile money","Carte / Autre"];
+const JOURS=["Dimanche","Lundi","Mardi","Mercredi","Jeudi","Vendredi","Samedi"];
+let S=JSON.parse(localStorage.getItem("caisse")||"null")||{ops:[],rates:{},counts:{},set:{tol:2,alert:10,fondU:150,fondC:300000,rate:2800,cashiers:["Léa","Karim","Sofia","Manager"]}};
+S.del=S.del||[];S.rts=S.rts||{};let tm;
+const persist=()=>localStorage.setItem("caisse",JSON.stringify(S));
+const save=()=>{persist();clearTimeout(tm);tm=setTimeout(()=>sync(),1500)};
+let tab="saisie",day=new Date().toISOString().slice(0,10),month=day.slice(0,7);
+const f=(n,c)=>(+n||0).toLocaleString("fr-FR",{minimumFractionDigits:c=="CDF"?0:2,maximumFractionDigits:c=="CDF"?0:2})+(c=="CDF"?" FC":" $");
+const rateFor=d=>{const k=Object.keys(S.rates).filter(x=>x<=d).sort().pop();return k?+S.rates[k]:+S.set.rate};
+function tot(d){
+  const o=S.ops.filter(x=>x.date==d),r=rateFor(d),c=S.counts[d];
+  const sum=(t,m,u)=>o.filter(x=>x.type==t&&(!m||x.mode==m)&&x.cur==u).reduce((a,x)=>a+x.amt,0);
+  const pair=(t,m)=>[sum(t,m,"USD"),sum(t,m,"CDF")],eq=p=>p[0]+p[1]/r;
+  const e=pair("Vente","Espèces"),m=pair("Vente","Mobile money"),k=pair("Vente","Carte / Autre"),rb=pair("Remboursement"),an=pair("Annulation / remise"),so=pair("Sortie de caisse"),ap=pair("Apport en caisse"),ve=pair("Versement coffre / banque");
+  const ca=eq(e)+eq(m)+eq(k)-eq(rb),tk=o.filter(x=>x.type=="Vente").length;
+  const fU=c&&c.fU!==""&&c.fU!=null?+c.fU:+S.set.fondU,fC=c&&c.fC!==""&&c.fC!=null?+c.fC:+S.set.fondC;
+  const thU=fU+e[0]+ap[0]-rb[0]-so[0]-ve[0],thC=fC+e[1]+ap[1]-rb[1]-so[1]-ve[1];
+  let eU=null,eC=null,eT=null,eE=null,st="";
+  if(c&&c.cU!==""&&c.cU!=null){eU=+c.cU-thU;eC=(+c.cC||0)-thC;eT=eU+eC/r;
+    if(c.rel!==""&&c.rel!=null)eE=+c.rel-(eq(m)+eq(k));
+    const mx=Math.max(Math.abs(eU),Math.abs(eC)/r,Math.abs(eE||0));st=mx<=S.set.tol?"OK":mx>S.set.alert?"ALERTE":"À justifier"}
+  else if(tk>0)st="Non compté";
+  return{o,r,e,m,k,rb,an,so,ap,ve,ca,tk,fU,fC,thU,thC,eU,eC,eT,eE,st,n:o.length};
+}
+const badge=s=>s?`<span class="s ${s=="OK"?"OK":s=="ALERTE"?"AL":s=="À justifier"?"AJ":""}">${s}</span>`:"";
+const opt=(a,v)=>a.map(x=>`<option${x==v?" selected":""}>${x}</option>`).join("");
+function vSaisie(){
+  const T=tot(day),now=new Date().toTimeString().slice(0,5);
+  return `<div class="card"><b>${JOURS[new Date(day).getDay()]} ${day.split("-").reverse().join("/")}</b> <small>— ${T.n} opérations · taux ${T.r} FC/$</small>
+  <div class="row"><div><label>Heure</label><input type="time" id="h" value="${now}"></div><div><label>N° ticket</label><input id="tk"></div></div>
+  <div class="row"><div><label>Caissier</label><select id="cs">${opt(S.set.cashiers)}</select></div><div><label>Type</label><select id="ty">${opt(TYPES)}</select></div></div>
+  <div class="row"><div><label>Mode</label><select id="mo">${opt(MODES)}</select></div><div><label>Devise</label><select id="cu"><option>USD</option><option>CDF</option></select></div></div>
+  <label>Montant</label><input type="number" id="am" step="any" inputmode="decimal"><label>Référence / commentaire</label><input id="rf">
+  <button class="p" onclick="add()">Ajouter l'opération</button></div>
+  <div class="card"><table><tr><th>Heure</th><th>Type</th><th>Montant</th><th></th></tr>${T.o.slice().sort((a,b)=>b.time.localeCompare(a.time)).map(x=>`<tr><td>${x.time}</td><td>${x.type=="Vente"?x.mode:x.type}<br><small>${x.cashier} ${x.ticket||""}</small></td><td>${f(x.amt,x.cur)}</td><td><button class="x" onclick="del('${x.id}')">✕</button></td></tr>`).join("")||"<tr><td colspan=4>Aucune opération ce jour.</td></tr>"}</table></div>`;
+}
+function add(){
+  const am=parseFloat($("#am").value);if(!(am>=0)||$("#am").value==="")return alert("Montant requis");
+  S.ops.push({id:Date.now()+""+Math.random().toString(36).slice(2,5),date:day,time:$("#h").value||"00:00",ticket:$("#tk").value,cashier:$("#cs").value,type:$("#ty").value,mode:$("#mo").value,cur:$("#cu").value,amt:am,ref:$("#rf").value});
+  save();render();$("#am").focus();
+}
+function del(id){if(confirm("Supprimer cette opération ?")){S.ops=S.ops.filter(x=>x.id!=id);S.del.push(id);save();render()}}
+function vJour(){
+  const T=tot(day),c=S.counts[day]||{},row=(l,p,k)=>`<tr${k?' class="k"':""}><td>${l}</td><td>${f(p[0],"USD")}</td><td>${f(p[1],"CDF")}</td><td>${f(p[0]+p[1]/T.r,"USD")}</td></tr>`;
+  const inp=(k,l)=>`<label>${l}</label><input type="number" step="any" inputmode="decimal" value="${c[k]??""}" onchange="cnt('${k}',this.value)">`;
+  return `<div class="card"><b>Totaux du jour</b> ${badge(T.st)}<table><tr><th></th><th>USD</th><th>CDF</th><th>Total éq.</th></tr>
+  ${row("Ventes espèces",T.e)}${row("Ventes mobile money",T.m)}${row("Ventes carte / autre",T.k)}${row("Remboursements",T.rb)}
+  <tr class="k"><td>CA net</td><td></td><td></td><td>${f(T.ca,"USD")}</td></tr><tr><td>Tickets</td><td></td><td></td><td>${T.tk}</td></tr>
+  ${row("Annulations (contrôle)",T.an)}${row("Sorties de caisse",T.so)}${row("Apports en caisse",T.ap)}${row("Versements coffre/banque",T.ve)}
+  <tr class="k"><td>Espèces théoriques</td><td>${f(T.thU,"USD")}</td><td>${f(T.thC,"CDF")}</td><td></td></tr></table></div>
+  <div class="card"><b>Contrôle de fin de journée</b><label>Taux du jour (FC pour 1 $)</label><input type="number" value="${T.r}" onchange="S.rates[day]=this.value;S.rts[day]=Date.now();save();render()">
+  ${inp("fU","Fond d'ouverture USD (défaut "+S.set.fondU+")")}${inp("fC","Fond d'ouverture CDF (défaut "+S.set.fondC+")")}${inp("cU","Espèces comptées USD")}${inp("cC","Espèces comptées CDF")}${inp("rel","Relevés TPE + mobile money (USD éq.)")}
+  <table><tr><td>Écart USD</td><td>${T.eU==null?"—":f(T.eU,"USD")}</td></tr><tr><td>Écart CDF</td><td>${T.eU==null?"—":f(T.eC,"CDF")}</td></tr><tr><td>Écart électronique</td><td>${T.eE==null?"—":f(T.eE,"USD")}</td></tr></table>
+  <button class="p" onclick="partager(rapport('jour'))">📤 Envoyer le rapport du jour au patron</button></div>`;
+}
+function cnt(k,v){S.counts[day]=Object.assign(S.counts[day]||{},{[k]:v,ts:Date.now()});save();render()}
+function vMois(){
+  const [y,m]=month.split("-").map(Number),nd=new Date(y,m,0).getDate();let h="",wk=[],M=[0,0,0,0];
+  const line=(c,l,a,cls)=>`<tr class="${cls}"><td>${l}</td><td>${f(a[0],"USD")}</td><td>${a[1]}</td><td>${a[2]}</td></tr>`;
+  const sub=a=>a.reduce((s,x)=>[s[0]+x.ca,s[1]+x.tk,s[2]+(x.eT||0)],[0,0,0]);
+  for(let i=1;i<=nd;i++){const d=`${month}-${String(i).padStart(2,"0")}`,wd=new Date(d).getDay(),T=tot(d);wk.push(T);
+    h+=`<tr onclick="day='${d}';tab='jour';render()"><td>${JOURS[wd].slice(0,3)} ${i}</td><td>${f(T.ca,"USD")}</td><td>${T.tk}</td><td>${T.eT==null?"—":f(T.eT,"USD")} ${badge(T.st)}</td></tr>`;
+    if(wd==0||i==nd){const s=sub(wk);h+=line(0,"Total semaine",[s[0],s[1],f(s[2],"USD")],"w");M[0]+=s[0];M[1]+=s[1];M[2]+=s[2];wk=[]}}
+  return `<div class="card"><input type="month" value="${month}" onchange="month=this.value;render()"><table><tr><th>Jour</th><th>CA net</th><th>Tickets</th><th>Écart</th></tr>${h}${line(0,"TOTAL DU MOIS",[M[0],M[1],f(M[2],"USD")],"m")}</table><small>Touchez un jour pour l'ouvrir.</small>
+  <button class="p" onclick="partager(rapport('mois'))">📤 Envoyer le rapport du mois au patron</button></div>`;
+}
+function vReg(){
+  return `<div class="card"><b>Réglages</b>${[["tol","Tolérance d'écart (USD)"],["alert","Seuil d'alerte (USD)"],["fondU","Fond de caisse USD"],["fondC","Fond de caisse CDF"],["rate","Taux de départ (FC pour 1 $)"]].map(([k,l])=>`<label>${l}</label><input type="number" value="${S.set[k]}" onchange="S.set.${k}=+this.value;save()">`).join("")}
+  <label>Caissiers (séparés par des virgules)</label><input value="${S.set.cashiers.join(",")}" onchange="S.set.cashiers=this.value.split(',').map(x=>x.trim()).filter(Boolean);save()"></div>
+  <div class="card"><button onclick="csv()">Exporter les opérations (CSV pour Excel)</button><button onclick="bak()" style="margin-top:8px">Sauvegarde complète (JSON)</button>
+  <label>Restaurer une sauvegarde</label><input type="file" accept=".json" onchange="rest(this.files[0])"></div>
+  <div class="card"><b>Synchronisation en ligne (temps réel)</b>
+  <label>URL Firebase Realtime Database</label><input placeholder="https://xxxx-default-rtdb.firebaseio.com" value="${S.set.dbUrl||""}" onchange="S.set.dbUrl=this.value.trim();save()">
+  <label>Code d'équipe (identique chez le caissier et le patron, long et secret)</label><input value="${S.set.code||""}" onchange="S.set.code=this.value.trim();save()">
+  <button class="p" onclick="sync(true)">🔄 Synchroniser maintenant</button>
+  <small>Une fois configuré, les données s'envoient automatiquement et le patron les voit en quelques secondes sur son téléphone.</small></div>
+  <div class="card"><b>Partage avec le patron</b><label>WhatsApp du patron (avec indicatif, ex. 243812345678)</label><input value="${S.set.tel||""}" onchange="S.set.tel=this.value;save()">
+  <label>E-mail du patron</label><input type="email" value="${S.set.mail||""}" onchange="S.set.mail=this.value;save()">
+  <button class="p" onclick="partFile()">📎 Envoyer toutes les données (fichier)</button>
+  <small>Le patron ouvre ce même fichier dans son navigateur, puis « Restaurer une sauvegarde » et choisit « Fusionner » pour voir toutes les données.</small></div>`;
+}
+function dl(n,t,m){const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([t],{type:m}));a.download=n;a.click()}
+function csv(){const q=v=>'"'+String(v??"").replace(/"/g,'""')+'"';dl("operations.csv","\ufeffDate;Heure;Ticket;Caissier;Type;Mode;Devise;Montant;Référence\n"+S.ops.slice().sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time)).map(x=>[x.date,x.time,x.ticket,x.cashier,x.type,x.mode,x.cur,String(x.amt).replace(".",","),x.ref].map(q).join(";")).join("\n"),"text/csv")}
+function bak(){dl("sauvegarde-caisse.json",JSON.stringify(S),"application/json")}
+function rest(file){if(!file)return;const r=new FileReader();r.onload=()=>{try{const N=JSON.parse(r.result);
+    if(confirm("OK = FUSIONNER avec les données actuelles\nAnnuler = REMPLACER les données actuelles")){const ids=new Set(S.ops.map(x=>x.id));N.ops.forEach(x=>{if(!ids.has(x.id))S.ops.push(x)});Object.assign(S.rates,N.rates);Object.assign(S.counts,N.counts)}
+    else S=N;S.del=S.del||[];S.rts=S.rts||{};
+    save();render();alert("Données importées")}catch(e){alert("Fichier invalide")}};r.readAsText(file)}
+function rapport(sc){
+  const L=[];
+  if(sc=="jour"){const T=tot(day);L.push(`CAISSE TERRASSE – ${day.split("-").reverse().join("/")}`,`CA net : ${f(T.ca,"USD")} (éq.)`,`Tickets : ${T.tk}`,`Espèces : ${f(T.e[0],"USD")} + ${f(T.e[1],"CDF")}`,`Mobile money : ${f(T.m[0],"USD")} + ${f(T.m[1],"CDF")}`,`Carte/autre : ${f(T.k[0],"USD")} + ${f(T.k[1],"CDF")}`,`Remboursements : ${f(T.rb[0],"USD")} + ${f(T.rb[1],"CDF")}`,`Espèces théoriques : ${f(T.thU,"USD")} + ${f(T.thC,"CDF")}`,T.eU==null?"Écart : non compté":`Écart : ${f(T.eU,"USD")} + ${f(T.eC,"CDF")} | électronique ${T.eE==null?"—":f(T.eE,"USD")}`,`Statut : ${T.st||"—"}`)}
+  else{const [y,m]=month.split("-").map(Number),nd=new Date(y,m,0).getDate();let ca=0,tk=0,ec=0,al=0,nc=0;L.push(`CAISSE TERRASSE – MOIS ${month.split("-").reverse().join("/")}`);
+    for(let i=1;i<=nd;i++){const d=`${month}-${String(i).padStart(2,"0")}`,T=tot(d);ca+=T.ca;tk+=T.tk;ec+=T.eT||0;if(T.st=="ALERTE")al++;if(T.st=="Non compté")nc++;if(T.n)L.push(`${String(i).padStart(2,"0")}/${String(m).padStart(2,"0")} : ${f(T.ca,"USD")} | ${T.tk} tickets | ${T.st||"—"}`)}
+    L.push(`TOTAL : ${f(ca,"USD")} | ${tk} tickets`,`Écart net : ${f(ec,"USD")} | jours ALERTE : ${al} | non comptés : ${nc}`)}
+  return L.join("\n");
+}
+function partager(t){
+  if(navigator.share)navigator.share({title:"Rapport caisse",text:t}).catch(()=>{});
+  else if(S.set.tel)open("https://wa.me/"+S.set.tel.replace(/\D/g,"")+"?text="+encodeURIComponent(t));
+  else if(S.set.mail)location.href="mailto:"+S.set.mail+"?subject=Rapport caisse&body="+encodeURIComponent(t);
+  else{navigator.clipboard&&navigator.clipboard.writeText(t);alert("Rapport copié. Collez-le dans WhatsApp ou un e-mail.")}
+}
+function partFile(){
+  const fl=new File([JSON.stringify(S)],"sauvegarde-caisse.json",{type:"application/json"});
+  if(navigator.canShare&&navigator.canShare({files:[fl]}))navigator.share({files:[fl],title:"Données caisse"}).catch(()=>{});else bak();
+}
+async function sync(man){
+  const u=S.set.dbUrl,c=S.set.code,st=$("#st");
+  if(!u||!c){if(man)alert("Renseignez l'URL Firebase et le code d'équipe dans Réglages.");return}
+  const url=u.replace(/\/$/,"")+"/caisse/"+encodeURIComponent(c)+".json";
+  try{
+    st.textContent="⟳";
+    const R=(await(await fetch(url)).json())||{},RO=R.ops||{},RD=R.del||{},RR=R.rates||{},RT=R.rts||{},RC=R.counts||{};
+    const del=new Set([...S.del,...Object.keys(RD)]);S.del=[...del];
+    const ids=new Set(S.ops.map(x=>x.id));
+    for(const id in RO)if(!ids.has(id)&&!del.has(id))S.ops.push(RO[id]);
+    S.ops=S.ops.filter(x=>!del.has(x.id));
+    for(const k in RT)if(RT[k]>(S.rts[k]||0)){S.rates[k]=RR[k];S.rts[k]=RT[k]}
+    for(const k in RC)if((RC[k].ts||0)>((S.counts[k]||{}).ts||0))S.counts[k]=RC[k];
+    const P={};
+    S.ops.forEach(x=>{if(!RO[x.id])P["ops/"+x.id]=x});
+    S.del.forEach(id=>{if(!RD[id])P["del/"+id]=true;if(RO[id])P["ops/"+id]=null});
+    for(const k in S.rts)if(S.rts[k]>(RT[k]||0)){P["rates/"+k]=+S.rates[k];P["rts/"+k]=S.rts[k]}
+    for(const k in S.counts)if((S.counts[k].ts||0)>((RC[k]||{}).ts||0))P["counts/"+k]=S.counts[k];
+    if(Object.keys(P).length)await fetch(url,{method:"PATCH",body:JSON.stringify(P)});
+    persist();st.textContent="● synchro "+new Date().toTimeString().slice(0,5);
+    if(!/INPUT|SELECT/.test((document.activeElement||{}).tagName||""))render();
+  }catch(e){st.textContent="○ hors ligne"}
+}
+setInterval(()=>sync(),20000);setTimeout(()=>sync(),1000);
+function render(){
+  $("#d").value=day;$("#v").innerHTML={saisie:vSaisie,jour:vJour,mois:vMois,reg:vReg}[tab]();
+  $("#n").innerHTML=[["saisie","Saisie"],["jour","Jour"],["mois","Semaine / Mois"],["reg","Réglages"]].map(([k,l])=>`<button class="${tab==k?"on":""}" onclick="tab='${k}';render()">${l}</button>`).join("");
+}
+$("#d").onchange=e=>{day=e.target.value||day;month=day.slice(0,7);render()};
+render();
+if("serviceWorker" in navigator)navigator.serviceWorker.register("sw.js");
+</script></body></html>
